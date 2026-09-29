@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFormLayout,
                                QPushButton, QVBoxLayout, QWidget)
 
 from obrazac import Obrazac
+from provera import ProveraSpiska
 
 try:
     import citac_lk
@@ -68,8 +69,14 @@ class Prozor(QWidget):
         self.brojac = 0
 
         self.setWindowTitle("Izjava birača – popunjavanje sa lične karte")
-        self.resize(560, 430)
-        v = QVBoxLayout(self)
+        self.resize(1250, 700)
+        glavni = QHBoxLayout(self)
+        levo = QWidget()
+        levo.setFixedWidth(520)
+        v = QVBoxLayout(levo)
+        glavni.addWidget(levo)
+        self.web = ProveraSpiska()
+        glavni.addWidget(self.web, 1)
 
         self.status = QLabel()
         f = QFont(); f.setPointSize(13); f.setBold(True)
@@ -101,22 +108,28 @@ class Prozor(QWidget):
         b_pregled = QPushButton("Pregled")
         b_ocisti = QPushButton("Očisti")
         b_dijag = QPushButton("Dijagnostika")
-        self.b_stampaj = QPushButton("Štampaj  (Enter)")
+        b_spisak = QPushButton("Proveri u spisku")
+        self.b_stampaj = QPushButton("Štampaj  (F9)")
         self.b_stampaj.setDefault(True)
         self.b_stampaj.setMinimumHeight(40)
-        h.addWidget(b_pregled); h.addWidget(b_ocisti); h.addWidget(b_dijag); h.addStretch(); h.addWidget(self.b_stampaj)
+        h.addWidget(b_pregled); h.addWidget(b_ocisti); h.addWidget(b_dijag); h.addWidget(b_spisak); h.addStretch(); h.addWidget(self.b_stampaj)
         v.addLayout(h)
 
         self.info = QLabel()
         self.info.setStyleSheet("color: gray")
         v.addWidget(self.info)
+        v.addStretch()
 
         b_pregled.clicked.connect(self.pregled)
         b_ocisti.clicked.connect(self.ocisti)
         b_dijag.clicked.connect(self.dijagnostika)
         self.b_stampaj.clicked.connect(self.stampaj)
-        QShortcut(QKeySequence(Qt.Key_Return), self, self.stampaj)
-        QShortcut(QKeySequence(Qt.Key_Enter), self, self.stampaj)
+        b_spisak.clicked.connect(self.proveri_spisak)
+        # F9 radi svuda; Enter samo u levom delu (u stranici Enter šalje upit)
+        QShortcut(QKeySequence(Qt.Key_F9), self, self.stampaj)
+        for kljuc in (Qt.Key_Return, Qt.Key_Enter):
+            sc = QShortcut(QKeySequence(kljuc), levo, self.stampaj)
+            sc.setContext(Qt.WidgetWithChildrenShortcut)
 
         nedostaju = self.obrazac.nedostaju()
         if nedostaju:
@@ -169,7 +182,9 @@ class Prozor(QWidget):
             "dokument": lk.dokument,
         })
         if citac_lk.jmbg_ispravan(lk.get("jmbg")):
-            self.set_status(f"Očitano: {lk.ime_prezime} – proverite i štampajte.", "darkgreen")
+            self.set_status(f"Očitano: {lk.ime_prezime}. Prepišite tekst sa slike desno "
+                            "i proverite spisak, pa štampajte (F9).", "darkgreen")
+            self.web.proveri(lk.get("jmbg"))
         else:
             self.set_status("Očitano, ali JMBG nije ispravan – proverite!", "darkred")
 
@@ -195,6 +210,13 @@ class Prozor(QWidget):
         m.setDetailedText(tekst)
         m.exec()
 
+    def proveri_spisak(self):
+        jmbg = self.edit["jmbg"].text().strip()
+        if len(jmbg) != 13 or not jmbg.isdigit():
+            QMessageBox.information(self, "Provera", "Unesite ispravan JMBG (13 cifara).")
+            return
+        self.web.proveri(jmbg)
+
     def popuni(self, d):
         for k, e in self.edit.items():
             e.setText(d.get(k, ""))
@@ -205,6 +227,7 @@ class Prozor(QWidget):
     def ocisti(self):
         for e in self.edit.values():
             e.clear()
+        self.web.prazno()
         self.set_status("Ubacite ličnu kartu u čitač…" if IMA_CITAC else "Ručni unos.")
 
     # ---------------------------------------------------------- štampa
