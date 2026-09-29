@@ -1,0 +1,32 @@
+name: Napravi Windows program
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalacija biblioteka
+        run: pip install -r requirements.txt pyinstaller
+
+      - name: Pravljenje .exe
+        run: pyinstaller --noconfirm --onedir --windowed --name IzjavaBiraca --add-data "obrazac.pdf;." main.py
+
+      - name: Dodavanje obrasca i podešavanja
+        shell: cmd
+        run: |
+          copy obrazac.pdf dist\IzjavaBiraca\
+          copy config.ini dist\IzjavaBiraca\
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IzjavaBiraca-Windows
+          path: dist/IzjavaBiraca
