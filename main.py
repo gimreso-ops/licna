@@ -166,7 +166,22 @@ class Prozor(QWidget):
         if atr == self.atr:
             return
         self.atr = atr
-        self.set_status("Čitam karticu…", "navy")
+        # Windows posle ubacivanja kartice nakratko sam pristupa čipu –
+        # sačekamo ga da završi, pa tek onda čitamo.
+        self.set_status("Kartica ubačena, čitam…", "navy")
+        self.timer.stop()
+        QTimer.singleShot(1500, self.procitaj_karticu)
+
+    def procitaj_karticu(self):
+        try:
+            self._procitaj_karticu()
+        finally:
+            self.timer.start(700)
+
+    def _procitaj_karticu(self):
+        citaci = citac_lk.spisak_citaca()
+        if not citaci:
+            return
         QApplication.processEvents()
         try:
             lk = citac_lk.procitaj(citaci[0])

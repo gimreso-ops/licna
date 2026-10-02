@@ -10,10 +10,12 @@ Osnovni podaci se čitaju BEZ PIN-a.
 Pokretanje za dijagnostiku:  python citac_lk.py --dump
 """
 import sys
+import time
 from dataclasses import dataclass, field
 
 from smartcard.System import readers
 from smartcard.Exceptions import NoCardException, CardConnectionException
+from smartcard.scard import SCARD_SHARE_EXCLUSIVE, SCARD_RESET_CARD
 
 AIDS = [
     [0xF3, 0x81, 0x00, 0x00, 0x02, 0x53, 0x45, 0x52, 0x49, 0x44, 0x01],  # Gemalto 2014+
@@ -205,12 +207,25 @@ def kartica_prisutna(citac):
         return None
 
 
-def procitaj(citac):
+def _povezi(citac):
+    """Ekskluzivna veza + reset kartice na kraju, da Windows (CertPropSvc)
+    ne bi istovremeno pristupao kartici i menjao izabrani fajl."""
     conn = citac.createConnection()
     try:
-        conn.connect()
-    except (NoCardException, CardConnectionException):
+        conn.connect(mode=SCARD_SHARE_EXCLUSIVE, disposition=SCARD_RESET_CARD)
+    except NoCardException:
         raise CitacGreska("Kartica nije ubačena.")
+    except (CardConnectionException, TypeError):
+        conn = citac.createConnection()          # starija pyscard / zauzet čitač
+        try:
+            conn.connect()
+        except (NoCardException, CardConnectionException):
+            raise CitacGreska("Kartica nije ubačena ili je čitač zauzet.")
+    return conn
+
+
+def _procitaj_jednom(citac):
+    conn = _povezi(citac)
     try:
         for aid in AIDS:                    # Gemalto / nove; Apollo nema AID
             if _select(conn, aid, 0x04, 0x00) or _select(conn, aid, 0x04):
@@ -218,11 +233,29 @@ def procitaj(citac):
         sirovo = {}
         for f in (FILE_DOCUMENT, FILE_PERSONAL, FILE_RESIDENCE):
             sirovo.update(_parse_tlv(_read_file(conn, f)))
+        return sirovo
     finally:
         try:
             conn.disconnect()
         except Exception:
             pass
+
+
+def procitaj(citac, pokusaja=4):
+    greska = None
+    for i in range(pokusaja):
+        try:
+            sirovo = _procitaj_jednom(citac)
+            break
+        except CitacGreska as ex:
+            greska = ex
+            if "nije ubačena" in str(ex) and "zauzet" not in str(ex):
+                raise
+        except Exception as ex:
+            greska = CitacGreska(str(ex))
+        time.sleep(0.8)
+    else:
+        raise greska
     lk = LicnaKarta(sirovo=sirovo)
     lk.polja = {naziv: sirovo.get(tag, "") for tag, naziv in TAGS.items()}
     if not lk.get("jmbg"):
