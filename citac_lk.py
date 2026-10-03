@@ -28,8 +28,8 @@ FILE_RESIDENCE = [0x0F, 0x04]
 
 # TLV tagovi
 TAGS = {
-    1545: "broj_dokumenta", 1546: "tip_dokumenta", 1547: "datum_izdavanja",
-    1548: "vazi_do", 1549: "izdavalac",
+    1546: "broj_dokumenta", 1547: "tip_dokumenta", 1548: "datum_izdavanja",
+    1549: "vazi_do", 1550: "izdavalac",
     1558: "jmbg", 1559: "prezime", 1560: "ime", 1561: "ime_roditelja",
     1562: "pol", 1563: "mesto_rodjenja", 1564: "opstina_rodjenja",
     1565: "drzava_rodjenja", 1566: "datum_rodjenja",
@@ -37,6 +37,28 @@ TAGS = {
     1572: "broj", 1573: "slovo", 1574: "ulaz", 1575: "sprat",
     1578: "stan", 1580: "datum_prijave_adrese",
 }
+
+
+LAT_CIR = [
+    ("DŽ", "Џ"), ("Dž", "Џ"), ("dž", "џ"), ("LJ", "Љ"), ("Lj", "Љ"), ("lj", "љ"),
+    ("NJ", "Њ"), ("Nj", "Њ"), ("nj", "њ"),
+]
+LAT_CIR_1 = dict(zip(
+    "ABCČĆDĐEFGHIJKLMNOPRSŠTUVZŽabcčćdđefghijklmnoprsštuvzž",
+    "АБЦЧЋДЂЕФГХИЈКЛМНОПРСШТУВЗЖабцчћдђефгхијклмнопрсштувзж"))
+# slova kojih nema u srpskoj latinici (strana imena) – približno, operater može da ispravi
+LAT_CIR_1.update({"Q": "К", "q": "к", "W": "В", "w": "в", "Y": "И", "y": "и",
+                  "Ä": "Е", "ä": "е", "Ö": "Е", "ö": "е", "Ü": "И", "ü": "и", "ß": "с"})
+
+
+def u_cirilicu(tekst):
+    """Srpska latinica → ćirilica. Ćirilica i brojevi ostaju nepromenjeni."""
+    if not tekst:
+        return ""
+    for lat, cir in LAT_CIR:
+        tekst = tekst.replace(lat, cir)
+    tekst = tekst.replace("X", "КС").replace("x", "кс")
+    return "".join(LAT_CIR_1.get(c, c) for c in tekst)
 
 
 class CitacGreska(Exception):
@@ -90,15 +112,35 @@ class LicnaKarta:
             s += f", стан {self.get('stan')}"
         return s.strip(" ,")
 
+    def _podaci_dokumenta(self):
+        """Broj, datum izdavanja i izdavalac. Ako tagovi ne odgovaraju očekivanom
+        (različite generacije kartica), podaci se prepoznaju po sadržaju."""
+        broj = self.get("broj_dokumenta")
+        datum = self.get("datum_izdavanja")
+        izd = self.get("izdavalac")
+        vrednosti = [(v or "").strip() for t, v in self.sirovo.items() if 1545 <= t <= 1557]
+        datumi = sorted((v for v in vrednosti if len(v) == 8 and v.isdigit()),
+                        key=lambda d: d[4:] + d[2:4] + d[:2])
+        if datumi:
+            datum = datumi[0]          # izdavanje je uvek pre isteka važenja
+        if not (broj.isdigit() and len(broj) != 8):
+            kand = [v for v in vrednosti if v.isdigit() and len(v) != 8]
+            broj = kand[0] if kand else broj
+        if not izd or izd.isdigit() or len(izd) <= 3:
+            kand = [v for v in vrednosti if any(c.isalpha() for c in v) and len(v) > 3]
+            izd = max(kand, key=len) if kand else ""
+        return broj, datum, izd
+
     @property
     def dokument(self):
-        parts = []
-        if self.get("broj_dokumenta"):
-            parts.append(f"личну карту бр. {self.get('broj_dokumenta')}")
-        if self.get("datum_izdavanja"):
-            parts.append(f"издату {self.datum(self.get('datum_izdavanja'))}")
-        if self.get("izdavalac"):
-            parts.append(self.get("izdavalac"))
+        broj, datum, izd = self._podaci_dokumenta()
+        parts = ["личну карту"]
+        if broj:
+            parts[0] += f" бр. {broj}"
+        if datum:
+            parts.append(f"издату {self.datum(datum)}")
+        if izd:
+            parts.append(f"издавалац {u_cirilicu(izd)}")
         return ", ".join(parts)
 
 

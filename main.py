@@ -234,10 +234,16 @@ class Prozor(QWidget):
 
     def popuni(self, d):
         for k, e in self.edit.items():
-            e.setText(d.get(k, ""))
+            v = d.get(k, "")
+            if IMA_CITAC and k != "jmbg":
+                v = citac_lk.u_cirilicu(v)
+            e.setText(v)
 
     def podaci(self):
-        return {k: e.text().strip() for k, e in self.edit.items()}
+        d = {k: e.text().strip() for k, e in self.edit.items()}
+        if IMA_CITAC:                       # sve što se štampa – ćirilicom
+            d = {k: (v if k == "jmbg" else citac_lk.u_cirilicu(v)) for k, v in d.items()}
+        return d
 
     def ocisti(self):
         for e in self.edit.values():
